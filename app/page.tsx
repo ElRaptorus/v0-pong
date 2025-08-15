@@ -40,10 +40,6 @@ export default function Home() {
   const [lobbyId, setLobbyId] = useState<string>("")
 
   const handleLevelComplete = (completedLevel: number) => {
-    // Unlock next level and start it automatically
-    const nextLevel = Math.min(50, completedLevel + 1)
-    setSettings((prev) => ({ ...prev, selectedLevel: nextLevel }))
-
     // Save completed level to localStorage
     const completedLevels = JSON.parse(localStorage.getItem("pongCompletedLevels") || "[]")
     if (!completedLevels.includes(completedLevel)) {
@@ -52,6 +48,15 @@ export default function Home() {
     }
   }
 
+  const resetLevelProgression = () => {
+    localStorage.removeItem("pongCompletedLevels")
+    localStorage.removeItem("pongTimeHallOfFame")
+    setSettings((prev) => ({ ...prev, selectedLevel: 1 }))
+  }
+
+  // Call this once to reset progression (remove this after first run)
+  // resetLevelProgression()
+
   return (
     <div className="min-h-screen bg-black text-green-400 font-mono flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
@@ -59,7 +64,9 @@ export default function Home() {
         {gameState === "timestart" && (
           <TimeStartScreen onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
         )}
-        {gameState === "survivorstart" && <SurvivorStartScreen onStateChange={setGameState} settings={settings} />}
+        {gameState === "survivorstart" && (
+          <SurvivorStartScreen onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
+        )}
         {gameState === "multiplayerlobby" && (
           <MultiplayerLobby
             onStateChange={setGameState}

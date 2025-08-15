@@ -5,10 +5,12 @@ import type { GameState, GameSettings } from "@/app/page"
 interface SurvivorStartScreenProps {
   onStateChange: (state: GameState) => void
   settings: GameSettings
+  onSettingsChange: (settings: GameSettings) => void
 }
 
-export default function SurvivorStartScreen({ onStateChange, settings }: SurvivorStartScreenProps) {
+export default function SurvivorStartScreen({ onStateChange, settings, onSettingsChange }: SurvivorStartScreenProps) {
   const handleStartGame = () => {
+    onSettingsChange({ ...settings, gameMode: "survivor" })
     onStateChange("game")
   }
 

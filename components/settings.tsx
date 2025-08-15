@@ -11,6 +11,7 @@ interface SettingsProps {
 
 export default function Settings({ onStateChange, settings, onSettingsChange }: SettingsProps) {
   const [tempPlayerName, setTempPlayerName] = useState(settings.playerName)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
 
   const handlePointsChange = (points: number) => {
     onSettingsChange({ ...settings, pointsToWin: points })
@@ -24,6 +25,13 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
     const name = tempPlayerName.trim().toUpperCase().substring(0, 25) || "PLAYER"
     onSettingsChange({ ...settings, playerName: name })
     setTempPlayerName(name)
+  }
+
+  const handleResetTimeMode = () => {
+    // Clear all Time Mode related localStorage data
+    localStorage.removeItem("pongCompletedLevels")
+    localStorage.removeItem("pongTimeBestScores")
+    setShowResetConfirm(false)
   }
 
   return (
@@ -111,7 +119,17 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
           )}
 
           <div className="text-left border-t border-green-400 pt-4">
-            <h3 className="text-lg font-bold mb-2">GAME INFO:</h3>
+            <h3 className="text-lg font-bold mb-4">RESET PROGRESS:</h3>
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="py-2 px-4 border-2 border-red-400 bg-black text-red-400 hover:bg-red-400 hover:text-black transition-colors font-bold"
+            >
+              RESET TIME MODE PROGRESS
+            </button>
+          </div>
+
+          <div className="text-left border-t border-green-400 pt-4">
+            <h3 className="text-lg font-bold mb-4">GAME INFO:</h3>
             <div className="text-sm space-y-1">
               {settings.gameMode === "time" ? (
                 <>
@@ -142,6 +160,34 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
           </div>
         </div>
       </div>
+
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="border-2 border-red-400 bg-black p-6 max-w-md">
+            <h2 className="text-2xl font-bold mb-4 text-red-400">WARNING!</h2>
+            <p className="mb-6 text-green-400">THIS WILL PERMANENTLY DELETE ALL TIME MODE PROGRESS INCLUDING:</p>
+            <ul className="text-left mb-6 text-green-400 text-sm">
+              <li>• ALL COMPLETED LEVELS</li>
+              <li>• ALL BEST SCORES</li>
+            </ul>
+            <p className="mb-6 text-red-400 font-bold">THIS ACTION CANNOT BE UNDONE!</p>
+            <div className="flex space-x-4">
+              <button
+                onClick={handleResetTimeMode}
+                className="flex-1 py-2 px-4 border-2 border-red-400 bg-red-400 text-black hover:bg-black hover:text-red-400 transition-colors font-bold"
+              >
+                YES, RESET ALL
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 py-2 px-4 border-2 border-green-400 bg-black text-green-400 hover:bg-green-400 hover:text-black transition-colors font-bold"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         onClick={() => onStateChange("menu")}

@@ -75,15 +75,13 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState<"player" | "opponent" | "draw" | null>(null)
   const [isPaused, setIsPaused] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(60)
+  const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [showGameResult, setShowGameResult] = useState(false)
   const [animationFrame, setAnimationFrame] = useState(0)
   const [shouldCompleteLevel, setShouldCompleteLevel] = useState(false)
-  // Add countdown state
   const [countdown, setCountdown] = useState(3)
   const [gameStarted, setGameStarted] = useState(false)
 
-  // Game constants
   const CANVAS_WIDTH = 800
   const CANVAS_HEIGHT = 400
   const PADDLE_WIDTH = 10
@@ -92,22 +90,40 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
 
   const getAIDifficulty = () => {
     if (settings.gameMode === "survivor") {
-      // Increase difficulty every 5 points
       const difficultyLevel = Math.floor(score.player / 5) + 1
-      return Math.min(0.95, 0.3 + difficultyLevel * 0.1)
+      return Math.min(0.95, 0.3 + difficultyLevel * 0.02)
     }
-    return Math.min(0.95, 0.3 + settings.selectedLevel * 0.013)
+    // Time Mode: 25% at level 1, 90% at level 50
+    return Math.min(0.9, 0.25 + (settings.selectedLevel - 1) * (0.65 / 49))
   }
 
   const aiDifficulty = getAIDifficulty()
+
   const aiSpeed =
     settings.gameMode === "multiplayer"
       ? 6
-      : 2 + (settings.gameMode === "survivor" ? Math.floor(score.player / 5) * 0.5 : settings.selectedLevel * 0.3)
-  const ballSpeed =
-    3 + (settings.gameMode === "survivor" ? Math.floor(score.player / 5) * 0.3 : settings.selectedLevel * 0.2)
+      : settings.gameMode === "survivor"
+        ? 2 + Math.floor(score.player / 5) * 0.3 + 1
+        : 2.25 + Math.floor((settings.selectedLevel - 1) / 5) * 1.25 // Increase by 1.25 every 5 levels
 
-  // Game state
+  const ballSpeed = (() => {
+    if (settings.gameMode === "survivor") {
+      const difficultyLevel = Math.floor(score.player / 5)
+      const speed = 3.5 + difficultyLevel * 0.25
+      return Math.min(10, speed) // Cap at 10
+    }
+    // Time Mode: 3.5 at level 1, 12 at level 50
+    return 3.5 + (settings.selectedLevel - 1) * (8.5 / 49)
+  })()
+
+  const getTimerDuration = () => {
+    if (settings.gameMode !== "time") return null
+    // 30s at level 1, +10s every 5 levels, cap at 60s
+    const baseTime = 30
+    const additionalTime = Math.floor((settings.selectedLevel - 1) / 5) * 10
+    return Math.min(60, baseTime + additionalTime)
+  }
+
   const ballRef = useRef<Ball>({
     x: CANVAS_WIDTH / 2,
     y: CANVAS_HEIGHT / 2,
@@ -132,7 +148,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
     speed: aiSpeed,
   })
 
-  // Add countdown effect
   useEffect(() => {
     if (!gameStarted && countdown > 0) {
       const timer = setTimeout(() => {
@@ -155,11 +170,15 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   }, [showGameResult])
 
   useEffect(() => {
-    // Only start timer after countdown finishes
-    if (settings.gameMode === "time" && !isPaused && !gameOver && timeLeft > 0 && gameStarted) {
+    const timerDuration = getTimerDuration()
+    setTimeLeft(timerDuration)
+  }, [settings.selectedLevel, settings.gameMode])
+
+  useEffect(() => {
+    if (settings.gameMode === "time" && timeLeft !== null && !isPaused && !gameOver && timeLeft > 0 && gameStarted) {
       const timer = setInterval(() => {
         setTimeLeft((prev) => {
-          if (prev <= 1) {
+          if (prev === null || prev <= 1) {
             setGameOver(true)
             if (score.player > score.opponent) {
               setWinner("player")
@@ -207,23 +226,24 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   }
 
   const updateGame = useCallback(() => {
-    // Don't update game during countdown or when paused/over
     if (isPaused || gameOver || !gameStarted) return
 
     const ball = ballRef.current
     const playerPaddle = playerPaddleRef.current
     const opponentPaddle = opponentPaddleRef.current
 
-    // Move ball
     ball.x += ball.dx
     ball.y += ball.dy
 
-    // Ball collision with top/bottom walls
-    if (ball.y <= 0 || ball.y >= CANVAS_HEIGHT - BALL_SIZE) {
-      ball.dy = -ball.dy
+    if (ball.y <= 0) {
+      ball.y = 0
+      ball.dy = Math.abs(ball.dy) + 0.5 // Ensure it bounces away with minimum speed
+    }
+    if (ball.y >= CANVAS_HEIGHT - BALL_SIZE) {
+      ball.y = CANVAS_HEIGHT - BALL_SIZE
+      ball.dy = -Math.abs(ball.dy) - 0.5 // Ensure it bounces away with minimum speed
     }
 
-    // Ball collision with paddles
     if (checkCollision(ball, playerPaddle)) {
       ball.dx = Math.abs(ball.dx)
       const hitPos = (ball.y - playerPaddle.y) / playerPaddle.height
@@ -236,7 +256,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       ball.dy = (hitPos - 0.5) * 8
     }
 
-    // Scoring
     if (ball.x < 0) {
       setScore((prev) => {
         const newScore = { ...prev, opponent: prev.opponent + 1 }
@@ -271,7 +290,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       resetBall()
     }
 
-    // Player paddle movement
     if (keysRef.current.has("w") || keysRef.current.has("W")) {
       playerPaddle.y = Math.max(0, playerPaddle.y - playerPaddle.speed)
     }
@@ -280,7 +298,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
     }
 
     if (settings.gameMode === "multiplayer") {
-      // Second player controls
       if (keysRef.current.has("ArrowUp")) {
         opponentPaddle.y = Math.max(0, opponentPaddle.y - opponentPaddle.speed)
       }
@@ -288,7 +305,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
         opponentPaddle.y = Math.min(CANVAS_HEIGHT - opponentPaddle.height, opponentPaddle.y + opponentPaddle.speed)
       }
     } else {
-      // AI movement with progressive difficulty
       const aiTarget = ball.y - opponentPaddle.height / 2
       const currentAiSpeed = opponentPaddle.speed
 
@@ -309,11 +325,9 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    // Clear canvas
     ctx.fillStyle = "#000000"
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-    // Draw center line
     ctx.strokeStyle = "#00ff00"
     ctx.lineWidth = 2
     ctx.setLineDash([10, 10])
@@ -323,17 +337,14 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
     ctx.stroke()
     ctx.setLineDash([])
 
-    // Draw paddles
     ctx.fillStyle = "#00ff00"
     ctx.fillRect(playerPaddleRef.current.x, playerPaddleRef.current.y, PADDLE_WIDTH, PADDLE_HEIGHT)
     ctx.fillRect(opponentPaddleRef.current.x, opponentPaddleRef.current.y, PADDLE_WIDTH, PADDLE_HEIGHT)
 
-    // Only draw ball after countdown
     if (gameStarted) {
       ctx.fillRect(ballRef.current.x, ballRef.current.y, BALL_SIZE, BALL_SIZE)
     }
 
-    // Draw border
     ctx.strokeStyle = "#00ff00"
     ctx.lineWidth = 2
     ctx.strokeRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
@@ -388,7 +399,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
         onStateChange("menu")
         return
       }
-      // Only allow pause after game starts
       if (e.key === " " && gameStarted) {
         setIsPaused((prev) => !prev)
         return
@@ -410,7 +420,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   }, [onStateChange, gameStarted])
 
   useEffect(() => {
-    // Always run game loop for drawing, but updateGame handles game state
     animationRef.current = requestAnimationFrame(gameLoop)
 
     return () => {
@@ -427,26 +436,22 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
         setGameOver(false)
         setWinner(null)
         setScore({ player: 0, opponent: 0 })
-        setTimeLeft(60)
-        // Reset countdown for next level
+        setTimeLeft(getTimerDuration())
         setCountdown(3)
         setGameStarted(false)
         resetBall()
-        if (onLevelComplete) {
-          const nextLevel = Math.min(50, settings.selectedLevel + 1)
-          // Update completed levels in localStorage immediately
-          const completedLevels = JSON.parse(localStorage.getItem("pongCompletedLevels") || "[]")
-          if (!completedLevels.includes(settings.selectedLevel)) {
-            completedLevels.push(settings.selectedLevel)
-            localStorage.setItem("pongCompletedLevels", JSON.stringify(completedLevels))
-          }
-          // Trigger level complete callback to update parent state
-          onLevelComplete(nextLevel)
+        // Only mark current level as completed, don't auto-progress
+        const completedLevels = JSON.parse(localStorage.getItem("pongCompletedLevels") || "[]")
+        if (!completedLevels.includes(settings.selectedLevel)) {
+          completedLevels.push(settings.selectedLevel)
+          localStorage.setItem("pongCompletedLevels", JSON.stringify(completedLevels))
         }
+        // Return to time start screen instead of auto-progressing
+        onStateChange("timeStart")
       }, 3000)
       return () => clearTimeout(timer)
     }
-  }, [showGameResult, winner, settings.gameMode, settings.selectedLevel, resetBall, onLevelComplete])
+  }, [showGameResult, winner, settings.gameMode, settings.selectedLevel, resetBall, onStateChange])
 
   return (
     <div className="text-center space-y-4">
@@ -455,7 +460,7 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
           {settings.playerName}: {score.player}
         </div>
         <div className="text-center">
-          {settings.gameMode === "time" ? (
+          {settings.gameMode === "time" && timeLeft !== null ? (
             <div>
               <div>TIME: {timeLeft}s</div>
               <div className="text-sm">LEVEL: {settings.selectedLevel}</div>
@@ -482,7 +487,6 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
           className="border-2 border-green-400 bg-black"
         />
 
-        {/* Add countdown overlay */}
         {!gameStarted && countdown > 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
             <div className="text-center space-y-4">
@@ -515,7 +519,13 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
                 }
               </div>
               <div className="text-4xl font-bold">
-                {winner === "player" ? "YOU WIN!" : winner === "opponent" ? "YOU LOSE!" : "DRAW!"}
+                {winner === "player"
+                  ? "YOU WIN!"
+                  : winner === "opponent"
+                    ? settings.gameMode === "survivor"
+                      ? "GAME OVER!"
+                      : "YOU LOSE!"
+                    : "DRAW!"}
               </div>
               <div className="text-xl">
                 FINAL SCORE: {score.player} - {score.opponent}
@@ -538,7 +548,7 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
         <p>W/S: MOVE LEFT PADDLE | {gameStarted ? "SPACE: PAUSE |" : ""} ESC: MENU</p>
         {settings.gameMode === "multiplayer" && <p>UP/DOWN ARROWS: MOVE RIGHT PADDLE</p>}
         {settings.gameMode === "time" ? (
-          <p>SCORE AS MANY POINTS AS POSSIBLE IN 60 SECONDS!</p>
+          <p>SCORE AS MANY POINTS AS POSSIBLE IN {getTimerDuration()}S!</p>
         ) : settings.gameMode === "survivor" ? (
           <p>SURVIVE AS LONG AS POSSIBLE! AI GETS HARDER EVERY 5 POINTS!</p>
         ) : (

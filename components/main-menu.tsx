@@ -41,7 +41,7 @@ export default function MainMenu({ onStateChange, settings }: MainMenuProps) {
             onClick={() => onStateChange("halloffame")}
             className="block w-full py-3 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors text-xl font-bold tracking-wide"
           >
-            HALL OF FAME
+            SURVIVOR HALL OF FAME
           </button>
 
           <button
