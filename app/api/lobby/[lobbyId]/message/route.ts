@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: { lobbyId
       return NextResponse.json({ error: "Lobby not found" }, { status: 404 })
     }
 
-    const lobby = JSON.parse(lobbyData as string)
+    const lobby = typeof lobbyData === "string" ? JSON.parse(lobbyData) : lobbyData
 
     // Add new message
     const newMessage = {
