@@ -18,7 +18,15 @@ interface LobbyData {
   hostReady: boolean
   guestReady: boolean
   pointsToWin: number
-  messages: Array<{ player: string; message: string; timestamp: number }>
+  messages: Array<{
+    id: number
+    text: string
+    player?: string
+    isSystem: boolean
+    timestamp: string
+  }>
+  createdAt: string
+  lastActivity: string
 }
 
 export default function MultiplayerLobby({
@@ -32,7 +40,15 @@ export default function MultiplayerLobby({
   const [isConnected, setIsConnected] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
   const [opponentReady, setOpponentReady] = useState(false)
-  const [chatMessages, setChatMessages] = useState<Array<{ player: string; message: string; timestamp: number }>>([])
+  const [chatMessages, setChatMessages] = useState<
+    Array<{
+      id: number
+      text: string
+      player?: string
+      isSystem: boolean
+      timestamp: string
+    }>
+  >([])
   const [chatInput, setChatInput] = useState("")
   const [opponentName, setOpponentName] = useState("")
   const [pointsToWin, setPointsToWin] = useState(settings.pointsToWin)
@@ -47,152 +63,203 @@ export default function MultiplayerLobby({
     }
   }, [])
 
-  const saveLobbyData = (data: LobbyData) => {
-    localStorage.setItem(`pongLobby_${data.id}`, JSON.stringify(data))
-  }
-
-  const loadLobbyData = (id: string): LobbyData | null => {
-    const data = localStorage.getItem(`pongLobby_${id}`)
-    return data ? JSON.parse(data) : null
-  }
-
-  const createLobby = () => {
+  const createLobby = async () => {
     const newLobbyId = Math.random().toString(36).substring(2, 8).toUpperCase()
-    const lobbyData: LobbyData = {
-      id: newLobbyId,
-      host: settings.playerName,
-      hostReady: false,
-      guestReady: false,
-      pointsToWin: pointsToWin,
-      messages: [
-        {
-          player: "SYSTEM",
-          message: `${settings.playerName} created the lobby`,
-          timestamp: Date.now(),
-        },
-      ],
+
+    try {
+      console.log("[v0] Creating lobby with ID:", newLobbyId)
+
+      console.log("[v0] Testing API route accessibility")
+      const testResponse = await fetch("/api/lobby/create", {
+        method: "GET",
+      })
+
+      console.log("[v0] Test response status:", testResponse.status)
+      console.log("[v0] Test response content-type:", testResponse.headers.get("content-type"))
+
+      if (!testResponse.headers.get("content-type")?.includes("application/json")) {
+        console.error("[v0] API route not accessible - getting HTML instead of JSON")
+        throw new Error("API routes not accessible - check deployment")
+      }
+
+      const testData = await testResponse.json()
+      console.log("[v0] Test response data:", testData)
+
+      console.log("[v0] API route accessible, proceeding with lobby creation")
+      const response = await fetch("/api/lobby/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lobbyId: newLobbyId,
+          hostName: settings.playerName,
+          pointsToWin: pointsToWin,
+        }),
+      })
+
+      console.log("[v0] Response status:", response.status)
+      console.log("[v0] Response headers:", Object.fromEntries(response.headers.entries()))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.log("[v0] Error response text:", errorText)
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const responseText = await response.text()
+      console.log("[v0] Response text:", responseText)
+
+      let responseData
+      try {
+        responseData = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error("[v0] JSON parse error:", parseError)
+        console.log("[v0] Raw response:", responseText)
+        throw new Error("Invalid JSON response from server")
+      }
+
+      const { lobby } = responseData
+
+      setLobbyId(newLobbyId)
+      setIsHost(true)
+      setIsConnected(true)
+      setConnectionStatus("connected")
+      setChatMessages(lobby.messages)
+
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.set("lobby", newLobbyId)
+      window.history.pushState({}, "", newUrl.toString())
+    } catch (error) {
+      console.error("[v0] Error creating lobby:", error)
+      alert(`FAILED TO CREATE LOBBY: ${error instanceof Error ? error.message : "Unknown error"}`)
+      setConnectionStatus("disconnected")
     }
-
-    setLobbyId(newLobbyId)
-    setIsHost(true)
-    setIsConnected(true)
-    setConnectionStatus("connected")
-    setChatMessages(lobbyData.messages)
-    saveLobbyData(lobbyData)
-
-    const newUrl = new URL(window.location.href)
-    newUrl.searchParams.set("lobby", newLobbyId)
-    window.history.pushState({}, "", newUrl.toString())
   }
 
-  const joinLobby = (id: string) => {
+  const joinLobby = async (id: string) => {
     setConnectionStatus("connecting")
-    const lobbyData = loadLobbyData(id)
 
-    if (!lobbyData) {
-      alert("LOBBY NOT FOUND!")
+    try {
+      const response = await fetch("/api/lobby/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lobbyId: id,
+          guestName: settings.playerName,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to join lobby")
+      }
+
+      const { lobby } = await response.json()
+
+      setLobbyId(id)
+      setIsHost(false)
+      setIsConnected(true)
+      setConnectionStatus("connected")
+      setOpponentName(lobby.host)
+      setOpponentReady(lobby.hostReady)
+      setPointsToWin(lobby.pointsToWin)
+      setChatMessages(lobby.messages)
+
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.set("lobby", id)
+      window.history.pushState({}, "", newUrl.toString())
+    } catch (error) {
+      console.error("Error joining lobby:", error)
+      alert(error instanceof Error ? error.message.toUpperCase() : "FAILED TO JOIN LOBBY!")
       setConnectionStatus("disconnected")
-      return
     }
-
-    if (lobbyData.guest && lobbyData.guest !== settings.playerName) {
-      alert("LOBBY IS FULL!")
-      setConnectionStatus("disconnected")
-      return
-    }
-
-    lobbyData.guest = settings.playerName
-    lobbyData.messages.push({
-      player: "SYSTEM",
-      message: `${settings.playerName} joined the lobby`,
-      timestamp: Date.now(),
-    })
-
-    setLobbyId(id)
-    setIsHost(false)
-    setIsConnected(true)
-    setConnectionStatus("connected")
-    setOpponentName(lobbyData.host)
-    setOpponentReady(lobbyData.hostReady)
-    setPointsToWin(lobbyData.pointsToWin)
-    setChatMessages(lobbyData.messages)
-    saveLobbyData(lobbyData)
-
-    const newUrl = new URL(window.location.href)
-    newUrl.searchParams.set("lobby", id)
-    window.history.pushState({}, "", newUrl.toString())
   }
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (chatInput.trim() && lobbyId) {
-      const newMessage = {
-        player: settings.playerName,
-        message: chatInput.trim(),
-        timestamp: Date.now(),
-      }
+      try {
+        const response = await fetch(`/api/lobby/${lobbyId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: chatInput.trim(),
+            playerName: settings.playerName,
+          }),
+        })
 
-      setChatMessages((prev) => [...prev, newMessage])
-      setChatInput("")
-
-      const lobbyData = loadLobbyData(lobbyId)
-      if (lobbyData) {
-        lobbyData.messages.push(newMessage)
-        saveLobbyData(lobbyData)
+        if (response.ok) {
+          setChatInput("")
+        }
+      } catch (error) {
+        console.error("Error sending message:", error)
       }
     }
   }
 
-  const toggleReady = () => {
+  const toggleReady = async () => {
     const newReadyState = !playerReady
     setPlayerReady(newReadyState)
 
-    const lobbyData = loadLobbyData(lobbyId)
-    if (lobbyData) {
-      if (isHost) {
-        lobbyData.hostReady = newReadyState
-      } else {
-        lobbyData.guestReady = newReadyState
-      }
-      saveLobbyData(lobbyData)
+    try {
+      const updates = isHost ? { hostReady: newReadyState } : { guestReady: newReadyState }
+
+      await fetch(`/api/lobby/${lobbyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
+    } catch (error) {
+      console.error("Error updating ready state:", error)
+      // Revert on error
+      setPlayerReady(!newReadyState)
     }
   }
 
-  const updatePointsToWin = (points: number) => {
+  const updatePointsToWin = async (points: number) => {
     if (isHost) {
       setPointsToWin(points)
-      const lobbyData = loadLobbyData(lobbyId)
-      if (lobbyData) {
-        lobbyData.pointsToWin = points
-        saveLobbyData(lobbyData)
+
+      try {
+        await fetch(`/api/lobby/${lobbyId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pointsToWin: points }),
+        })
+      } catch (error) {
+        console.error("Error updating points to win:", error)
       }
     }
   }
 
   const startGame = () => {
     if (isHost && playerReady && opponentReady) {
-      onSettingsChange({ ...settings, gameMode: "multiplayer", pointsToWin })
+      onSettingsChange({
+        ...settings,
+        gameMode: "multiplayer",
+        pointsToWin,
+      })
       onStateChange("game")
     }
   }
 
-  const leaveLobby = () => {
+  const leaveLobby = async () => {
     if (lobbyId) {
-      const lobbyData = loadLobbyData(lobbyId)
-      if (lobbyData) {
+      try {
         if (isHost) {
-          // Host leaving - remove lobby
-          localStorage.removeItem(`pongLobby_${lobbyId}`)
+          // Host leaving - delete lobby
+          await fetch(`/api/lobby/${lobbyId}`, { method: "DELETE" })
         } else {
           // Guest leaving - remove guest from lobby
-          lobbyData.guest = undefined
-          lobbyData.guestReady = false
-          lobbyData.messages.push({
-            player: "SYSTEM",
-            message: `${settings.playerName} left the lobby`,
-            timestamp: Date.now(),
+          await fetch(`/api/lobby/${lobbyId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              guest: null,
+              guestReady: false,
+            }),
           })
-          saveLobbyData(lobbyData)
         }
+      } catch (error) {
+        console.error("Error leaving lobby:", error)
       }
     }
 
@@ -206,17 +273,23 @@ export default function MultiplayerLobby({
 
   useEffect(() => {
     if (isConnected && lobbyId) {
-      const interval = setInterval(() => {
-        const lobbyData = loadLobbyData(lobbyId)
-        if (lobbyData) {
-          if (isHost) {
-            setOpponentName(lobbyData.guest || "")
-            setOpponentReady(lobbyData.guestReady)
-          } else {
-            setOpponentReady(lobbyData.hostReady)
-            setPointsToWin(lobbyData.pointsToWin)
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/lobby/${lobbyId}`)
+          if (response.ok) {
+            const { lobby } = await response.json()
+
+            if (isHost) {
+              setOpponentName(lobby.guest || "")
+              setOpponentReady(lobby.guestReady)
+            } else {
+              setOpponentReady(lobby.hostReady)
+              setPointsToWin(lobby.pointsToWin)
+            }
+            setChatMessages(lobby.messages)
           }
-          setChatMessages(lobbyData.messages)
+        } catch (error) {
+          console.error("Error polling lobby:", error)
         }
       }, 2000)
 
@@ -357,20 +430,20 @@ export default function MultiplayerLobby({
         <div className="mb-6 border border-green-400 p-4 h-32 overflow-y-auto text-left">
           <h3 className="font-bold mb-2 text-center">CHAT</h3>
           <div className="space-y-1">
-            {chatMessages.map((msg, i) => (
-              <div key={i} className="text-sm">
+            {chatMessages.map((msg) => (
+              <div key={msg.id} className="text-sm">
                 <span
                   className={
-                    msg.player === "SYSTEM"
+                    msg.isSystem
                       ? "text-gray-400"
                       : msg.player === settings.playerName
                         ? "text-green-400"
                         : "text-yellow-400"
                   }
                 >
-                  {msg.player}:
+                  {msg.isSystem ? "SYSTEM" : msg.player}:
                 </span>{" "}
-                {msg.message}
+                {msg.text}
               </div>
             ))}
           </div>
