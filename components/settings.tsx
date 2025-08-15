@@ -7,9 +7,10 @@ interface SettingsProps {
   onStateChange: (state: GameState) => void
   settings: GameSettings
   onSettingsChange: (settings: GameSettings) => void
+  onResetTournament?: () => void
 }
 
-export default function Settings({ onStateChange, settings, onSettingsChange }: SettingsProps) {
+export default function Settings({ onStateChange, settings, onSettingsChange, onResetTournament }: SettingsProps) {
   const [tempPlayerName, setTempPlayerName] = useState(settings.playerName)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
 
@@ -27,10 +28,10 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
     setTempPlayerName(name)
   }
 
-  const handleResetTimeMode = () => {
-    // Clear all Time Mode related localStorage data
-    localStorage.removeItem("pongCompletedLevels")
-    localStorage.removeItem("pongTimeBestScores")
+  const handleResetTournament = () => {
+    localStorage.removeItem("pongTournamentCompletedLevels")
+    localStorage.removeItem("pongTournamentBestScores")
+    onResetTournament?.()
     setShowResetConfirm(false)
   }
 
@@ -47,7 +48,7 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
                 type="text"
                 value={tempPlayerName}
                 onChange={(e) => setTempPlayerName(e.target.value)}
-                maxLength={25} // Increased from 10 to 25
+                maxLength={25}
                 className="flex-1 py-2 px-4 border-2 border-green-400 bg-black text-green-400 font-mono"
                 placeholder="ENTER NAME"
               />
@@ -65,14 +66,14 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
             <label className="block text-xl font-bold mb-4">GAME MODE:</label>
             <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={() => handleGameModeChange("time")}
+                onClick={() => handleGameModeChange("tournament")}
                 className={`py-3 px-4 border-2 transition-colors ${
-                  settings.gameMode === "time"
+                  settings.gameMode === "tournament"
                     ? "border-green-400 bg-green-400 text-black"
                     : "border-green-400 bg-black hover:bg-green-400 hover:text-black"
                 }`}
               >
-                TIME MODE
+                TOURNAMENT
               </button>
               <button
                 onClick={() => handleGameModeChange("multiplayer")}
@@ -118,26 +119,28 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
             </div>
           )}
 
-          <div className="text-left border-t border-green-400 pt-4">
-            <h3 className="text-lg font-bold mb-4">RESET PROGRESS:</h3>
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="py-2 px-4 border-2 border-red-400 bg-black text-red-400 hover:bg-red-400 hover:text-black transition-colors font-bold"
-            >
-              RESET TIME MODE PROGRESS
-            </button>
-          </div>
+          {settings.gameMode === "tournament" && (
+            <div className="text-left border-t border-green-400 pt-4">
+              <h3 className="text-lg font-bold mb-4">RESET PROGRESS:</h3>
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="py-2 px-4 border-2 border-red-400 bg-black text-red-400 hover:bg-red-400 hover:text-black transition-colors font-bold"
+              >
+                RESET TOURNAMENT PROGRESS
+              </button>
+            </div>
+          )}
 
           <div className="text-left border-t border-green-400 pt-4">
             <h3 className="text-lg font-bold mb-4">GAME INFO:</h3>
             <div className="text-sm space-y-1">
-              {settings.gameMode === "time" ? (
+              {settings.gameMode === "tournament" ? (
                 <>
-                  <p>• 60 SECOND TIME LIMIT</p>
-                  <p>• SCORE AS MANY POINTS AS POSSIBLE</p>
-                  <p>• PLAYER WITH MOST POINTS WINS</p>
-                  <p>• AI DIFFICULTY BASED ON SELECTED LEVEL</p>
-                  <p>• USE LEVEL SELECT TO CHOOSE DIFFICULTY</p>
+                  <p>• 50 PROGRESSIVE DIFFICULTY LEVELS</p>
+                  <p>• FIRST TO 10 POINTS WINS EACH LEVEL</p>
+                  <p>• AI DIFFICULTY INCREASES WITH EACH LEVEL</p>
+                  <p>• UNLOCK NEW LEVELS BY COMPLETING PREVIOUS ONES</p>
+                  <p>• TRACK YOUR BEST SCORES FOR EACH LEVEL</p>
                 </>
               ) : settings.gameMode === "survivor" ? (
                 <>
@@ -150,7 +153,7 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
               ) : (
                 <>
                   <p>• TWO PLAYER LOCAL MULTIPLAYER</p>
-                  <p>• FIRST TO REACH TARGET POINTS WINS</p>
+                  <p>• FIRST TO REACH {settings.pointsToWin} POINTS WINS</p>
                   <p>• PLAYER 1: W/S KEYS</p>
                   <p>• PLAYER 2: UP/DOWN ARROW KEYS</p>
                   <p>• CLASSIC HEAD-TO-HEAD COMPETITION</p>
@@ -165,7 +168,7 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
           <div className="border-2 border-red-400 bg-black p-6 max-w-md">
             <h2 className="text-2xl font-bold mb-4 text-red-400">WARNING!</h2>
-            <p className="mb-6 text-green-400">THIS WILL PERMANENTLY DELETE ALL TIME MODE PROGRESS INCLUDING:</p>
+            <p className="mb-6 text-green-400">THIS WILL PERMANENTLY DELETE ALL TOURNAMENT PROGRESS INCLUDING:</p>
             <ul className="text-left mb-6 text-green-400 text-sm">
               <li>• ALL COMPLETED LEVELS</li>
               <li>• ALL BEST SCORES</li>
@@ -173,7 +176,7 @@ export default function Settings({ onStateChange, settings, onSettingsChange }: 
             <p className="mb-6 text-red-400 font-bold">THIS ACTION CANNOT BE UNDONE!</p>
             <div className="flex space-x-4">
               <button
-                onClick={handleResetTimeMode}
+                onClick={handleResetTournament}
                 className="flex-1 py-2 px-4 border-2 border-red-400 bg-red-400 text-black hover:bg-black hover:text-red-400 transition-colors font-bold"
               >
                 YES, RESET ALL

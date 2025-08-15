@@ -5,8 +5,8 @@ import PongGame from "@/components/pong-game"
 import MainMenu from "@/components/main-menu"
 import HallOfFame from "@/components/hall-of-fame"
 import Settings from "@/components/settings"
-import LevelSelector from "@/components/level-selector"
-import TimeStartScreen from "@/components/time-start-screen"
+import TournamentMenu from "@/components/tournament-menu"
+import TournamentLevelSelect from "@/components/tournament-level-select"
 import SurvivorStartScreen from "@/components/survivor-start-screen"
 import MultiplayerLobby from "@/components/multiplayer-lobby"
 
@@ -15,11 +15,12 @@ export type GameState =
   | "game"
   | "halloffame"
   | "settings"
-  | "levelselect"
-  | "timestart"
+  | "tournament"
+  | "tournamentlevelselect"
   | "multiplayerlobby"
   | "survivorstart"
-export type GameMode = "time" | "multiplayer" | "survivor"
+
+export type GameMode = "tournament" | "multiplayer" | "survivor"
 
 export interface GameSettings {
   pointsToWin: number
@@ -28,63 +29,148 @@ export interface GameSettings {
   selectedLevel: number
 }
 
+export interface TournamentSettings {
+  selectedLevel: number
+}
+
+export interface MultiplayerSettings {
+  pointsToWin: number
+}
+
+export type SurvivorSettings = {}
+
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>("menu")
-  const [settings, setSettings] = useState<GameSettings>({
-    pointsToWin: 10,
-    gameMode: "time",
+
+  const [globalSettings, setGlobalSettings] = useState({
+    gameMode: "tournament" as GameMode,
     playerName: "PLAYER",
+  })
+
+  const [tournamentSettings, setTournamentSettings] = useState<TournamentSettings>({
     selectedLevel: 1,
   })
 
+  const [multiplayerSettings, setMultiplayerSettings] = useState<MultiplayerSettings>({
+    pointsToWin: 10,
+  })
+
+  const [survivorSettings, setSurvivorSettings] = useState<SurvivorSettings>({})
+
   const [lobbyId, setLobbyId] = useState<string>("")
 
-  const handleLevelComplete = (completedLevel: number) => {
-    // Save completed level to localStorage
-    const completedLevels = JSON.parse(localStorage.getItem("pongCompletedLevels") || "[]")
-    if (!completedLevels.includes(completedLevel)) {
-      completedLevels.push(completedLevel)
-      localStorage.setItem("pongCompletedLevels", JSON.stringify(completedLevels))
+  const getCombinedSettings = (): GameSettings => {
+    const baseSettings = {
+      gameMode: globalSettings.gameMode,
+      playerName: globalSettings.playerName,
+    }
+
+    switch (globalSettings.gameMode) {
+      case "tournament":
+        return {
+          ...baseSettings,
+          selectedLevel: tournamentSettings.selectedLevel,
+          pointsToWin: 10, // Tournament always uses 10 points
+        }
+      case "multiplayer":
+        return {
+          ...baseSettings,
+          selectedLevel: 1, // Not used in multiplayer
+          pointsToWin: multiplayerSettings.pointsToWin,
+        }
+      case "survivor":
+        return {
+          ...baseSettings,
+          selectedLevel: 1, // Not used in survivor
+          pointsToWin: 10, // Survivor uses fixed 10 points for computer
+        }
+      default:
+        return {
+          ...baseSettings,
+          selectedLevel: 1,
+          pointsToWin: 10,
+        }
     }
   }
 
-  const resetLevelProgression = () => {
-    localStorage.removeItem("pongCompletedLevels")
-    localStorage.removeItem("pongTimeHallOfFame")
-    setSettings((prev) => ({ ...prev, selectedLevel: 1 }))
+  const handleSettingsChange = (newSettings: Partial<GameSettings>) => {
+    if (newSettings.gameMode !== undefined) {
+      setGlobalSettings((prev) => ({ ...prev, gameMode: newSettings.gameMode! }))
+    }
+    if (newSettings.playerName !== undefined) {
+      setGlobalSettings((prev) => ({ ...prev, playerName: newSettings.playerName! }))
+    }
+    if (newSettings.selectedLevel !== undefined && globalSettings.gameMode === "tournament") {
+      setTournamentSettings((prev) => ({ ...prev, selectedLevel: newSettings.selectedLevel! }))
+    }
+    if (newSettings.pointsToWin !== undefined && globalSettings.gameMode === "multiplayer") {
+      setMultiplayerSettings((prev) => ({ ...prev, pointsToWin: newSettings.pointsToWin! }))
+    }
   }
 
-  // Call this once to reset progression (remove this after first run)
-  // resetLevelProgression()
+  const handleLevelComplete = (completedLevel: number) => {
+    const completedLevels = JSON.parse(localStorage.getItem("pongTournamentCompletedLevels") || "[]")
+    if (!completedLevels.includes(completedLevel)) {
+      completedLevels.push(completedLevel)
+      localStorage.setItem("pongTournamentCompletedLevels", JSON.stringify(completedLevels))
+    }
+
+    setTournamentSettings((prev) => ({ ...prev, selectedLevel: completedLevel + 1 }))
+  }
+
+  const resetTournamentProgression = () => {
+    localStorage.removeItem("pongTournamentCompletedLevels")
+    localStorage.removeItem("pongTournamentBestScores")
+    setTournamentSettings({ selectedLevel: 1 })
+  }
+
+  const currentSettings = getCombinedSettings()
 
   return (
     <div className="min-h-screen bg-black text-green-400 font-mono flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {gameState === "menu" && <MainMenu onStateChange={setGameState} settings={settings} />}
-        {gameState === "timestart" && (
-          <TimeStartScreen onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
+        {gameState === "menu" && <MainMenu onStateChange={setGameState} settings={currentSettings} />}
+        {gameState === "tournament" && (
+          <TournamentMenu
+            onStateChange={setGameState}
+            settings={currentSettings}
+            onSettingsChange={handleSettingsChange}
+          />
+        )}
+        {gameState === "tournamentlevelselect" && (
+          <TournamentLevelSelect
+            onStateChange={setGameState}
+            settings={currentSettings}
+            onSettingsChange={handleSettingsChange}
+          />
         )}
         {gameState === "survivorstart" && (
-          <SurvivorStartScreen onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
+          <SurvivorStartScreen
+            onStateChange={setGameState}
+            settings={currentSettings}
+            onSettingsChange={handleSettingsChange}
+          />
         )}
         {gameState === "multiplayerlobby" && (
           <MultiplayerLobby
             onStateChange={setGameState}
-            settings={settings}
-            onSettingsChange={setSettings}
+            settings={currentSettings}
+            onSettingsChange={handleSettingsChange}
             lobbyId={lobbyId}
             setLobbyId={setLobbyId}
           />
         )}
         {gameState === "game" && (
-          <PongGame onStateChange={setGameState} settings={settings} onLevelComplete={handleLevelComplete} />
+          <PongGame onStateChange={setGameState} settings={currentSettings} onLevelComplete={handleLevelComplete} />
         )}
         {gameState === "halloffame" && <HallOfFame onStateChange={setGameState} />}
         {gameState === "settings" && (
-          <Settings onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
-        )}
-        {gameState === "levelselect" && (
-          <LevelSelector onStateChange={setGameState} settings={settings} onSettingsChange={setSettings} />
+          <Settings
+            onStateChange={setGameState}
+            settings={currentSettings}
+            onSettingsChange={handleSettingsChange}
+            onResetTournament={resetTournamentProgression}
+          />
         )}
       </div>
     </div>

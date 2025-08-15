@@ -93,8 +93,11 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       const difficultyLevel = Math.floor(score.player / 5) + 1
       return Math.min(0.95, 0.3 + difficultyLevel * 0.02)
     }
-    // Time Mode: 25% at level 1, 90% at level 50
-    return Math.min(0.9, 0.25 + (settings.selectedLevel - 1) * (0.65 / 49))
+    if (settings.gameMode === "tournament") {
+      // 25% at level 1, 90% at level 50
+      return Math.min(0.9, 0.25 + (settings.selectedLevel - 1) * (0.65 / 49))
+    }
+    return 0.5 // Default for multiplayer
   }
 
   const aiDifficulty = getAIDifficulty()
@@ -104,7 +107,8 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       ? 6
       : settings.gameMode === "survivor"
         ? 2 + Math.floor(score.player / 5) * 0.3 + 1
-        : 2.25 + Math.floor((settings.selectedLevel - 1) / 5) * 1.25 // Increase by 1.25 every 5 levels
+        : // Updated tournament AI speed calculation
+          2.25 + Math.floor((settings.selectedLevel - 1) / 5) * 1.25 // Increase by 1.25 every 5 levels
 
   const ballSpeed = (() => {
     if (settings.gameMode === "survivor") {
@@ -112,16 +116,15 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       const speed = 3.5 + difficultyLevel * 0.25
       return Math.min(10, speed) // Cap at 10
     }
-    // Time Mode: 3.5 at level 1, 12 at level 50
-    return 3.5 + (settings.selectedLevel - 1) * (8.5 / 49)
+    if (settings.gameMode === "tournament") {
+      // 3.5 at level 1, 12 at level 50
+      return 3.5 + (settings.selectedLevel - 1) * (8.5 / 49)
+    }
+    return 4 // Default for multiplayer
   })()
 
   const getTimerDuration = () => {
-    if (settings.gameMode !== "time") return null
-    // 30s at level 1, +10s every 5 levels, cap at 60s
-    const baseTime = 30
-    const additionalTime = Math.floor((settings.selectedLevel - 1) / 5) * 10
-    return Math.min(60, baseTime + additionalTime)
+    return null // Tournament mode has no timer
   }
 
   const ballRef = useRef<Ball>({
@@ -175,36 +178,9 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   }, [settings.selectedLevel, settings.gameMode])
 
   useEffect(() => {
-    if (settings.gameMode === "time" && timeLeft !== null && !isPaused && !gameOver && timeLeft > 0 && gameStarted) {
-      const timer = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev === null || prev <= 1) {
-            setGameOver(true)
-            if (score.player > score.opponent) {
-              setWinner("player")
-              setShouldCompleteLevel(true)
-            } else if (score.opponent > score.player) {
-              setWinner("opponent")
-            } else {
-              setWinner("draw")
-            }
-            setShowGameResult(true)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-
-      return () => clearInterval(timer)
-    }
+    // Timer logic removed for tournament mode
+    return
   }, [settings.gameMode, isPaused, gameOver, timeLeft, score, gameStarted])
-
-  useEffect(() => {
-    if (shouldCompleteLevel && onLevelComplete) {
-      onLevelComplete(settings.selectedLevel)
-      setShouldCompleteLevel(false)
-    }
-  }, [shouldCompleteLevel, onLevelComplete, settings.selectedLevel])
 
   const resetBall = useCallback(() => {
     const ball = ballRef.current
@@ -260,7 +236,11 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       setScore((prev) => {
         const newScore = { ...prev, opponent: prev.opponent + 1 }
 
-        if (settings.gameMode === "multiplayer" && newScore.opponent >= settings.pointsToWin) {
+        if (settings.gameMode === "tournament" && newScore.opponent >= settings.pointsToWin) {
+          setGameOver(true)
+          setWinner("opponent")
+          setShowGameResult(true)
+        } else if (settings.gameMode === "multiplayer" && newScore.opponent >= settings.pointsToWin) {
           setGameOver(true)
           setWinner("opponent")
           setShowGameResult(true)
@@ -279,7 +259,12 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       setScore((prev) => {
         const newScore = { ...prev, player: prev.player + 1 }
 
-        if (settings.gameMode === "multiplayer" && newScore.player >= settings.pointsToWin) {
+        if (settings.gameMode === "tournament" && newScore.player >= settings.pointsToWin) {
+          setGameOver(true)
+          setWinner("player")
+          setShowGameResult(true)
+          setShouldCompleteLevel(true)
+        } else if (settings.gameMode === "multiplayer" && newScore.player >= settings.pointsToWin) {
           setGameOver(true)
           setWinner("player")
           setShowGameResult(true)
@@ -357,22 +342,16 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
   }, [updateGame, draw])
 
   const saveScore = useCallback(() => {
-    if (settings.gameMode === "time" && (winner === "player" || winner === "draw")) {
-      const hallOfFame = JSON.parse(localStorage.getItem("pongTimeHallOfFame") || "[]")
-      hallOfFame.push({
-        name: settings.playerName,
-        score: score.player,
-        opponentScore: score.opponent,
-        level: settings.selectedLevel,
-        result: winner,
-        date: new Date().toLocaleDateString(),
-      })
-      hallOfFame.sort((a: any, b: any) => {
-        if (a.result === "player" && b.result !== "player") return -1
-        if (b.result === "player" && a.result !== "player") return 1
-        return b.level - a.level || b.score - a.score
-      })
-      localStorage.setItem("pongTimeHallOfFame", JSON.stringify(hallOfFame.slice(0, 10)))
+    if (settings.gameMode === "tournament" && winner === "player") {
+      // Save best score for this level
+      const bestScores = JSON.parse(localStorage.getItem("pongTournamentBestScores") || "{}")
+      const currentBest = bestScores[settings.selectedLevel]
+      const newScore = `${score.player}-${score.opponent}`
+
+      if (!currentBest || score.player > Number.parseInt(currentBest.split("-")[0])) {
+        bestScores[settings.selectedLevel] = newScore
+        localStorage.setItem("pongTournamentBestScores", JSON.stringify(bestScores))
+      }
     } else if (settings.gameMode === "survivor") {
       const hallOfFame = JSON.parse(localStorage.getItem("pongSurvivorHallOfFame") || "[]")
       hallOfFame.push({
@@ -429,29 +408,91 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
     }
   }, [gameLoop])
 
-  useEffect(() => {
-    if (showGameResult && winner === "player" && settings.gameMode === "time") {
-      const timer = setTimeout(() => {
-        setShowGameResult(false)
-        setGameOver(false)
-        setWinner(null)
-        setScore({ player: 0, opponent: 0 })
-        setTimeLeft(getTimerDuration())
-        setCountdown(3)
-        setGameStarted(false)
-        resetBall()
-        // Only mark current level as completed, don't auto-progress
-        const completedLevels = JSON.parse(localStorage.getItem("pongCompletedLevels") || "[]")
-        if (!completedLevels.includes(settings.selectedLevel)) {
-          completedLevels.push(settings.selectedLevel)
-          localStorage.setItem("pongCompletedLevels", JSON.stringify(completedLevels))
-        }
-        // Return to time start screen instead of auto-progressing
-        onStateChange("timeStart")
-      }, 3000)
-      return () => clearTimeout(timer)
+  const handleReturnToLevelSelection = () => {
+    // Stop any running animations
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
     }
-  }, [showGameResult, winner, settings.gameMode, settings.selectedLevel, resetBall, onStateChange])
+
+    if (winner === "player") {
+      const completedLevels = JSON.parse(localStorage.getItem("pongTournamentCompletedLevels") || "[]")
+      if (!completedLevels.includes(settings.selectedLevel)) {
+        completedLevels.push(settings.selectedLevel)
+        localStorage.setItem("pongTournamentCompletedLevels", JSON.stringify(completedLevels))
+      }
+    }
+
+    setShowGameResult(false)
+    setGameOver(false)
+    setWinner(null)
+    setScore({ player: 0, opponent: 0 })
+    setTimeLeft(null)
+    setCountdown(3)
+    setGameStarted(false)
+    setIsPaused(false)
+    setShouldCompleteLevel(false)
+
+    setTimeout(() => {
+      onStateChange("tournamentlevelselect")
+    }, 100)
+  }
+
+  const handleReplayLevel = () => {
+    // Stop any running animations
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
+    }
+
+    setShowGameResult(false)
+    setGameOver(false)
+    setWinner(null)
+    setScore({ player: 0, opponent: 0 })
+    setTimeLeft(getTimerDuration())
+    setCountdown(3)
+    setGameStarted(false)
+    setIsPaused(false)
+    setShouldCompleteLevel(false)
+    resetBall()
+  }
+
+  const handleStartNextLevel = () => {
+    const nextLevel = settings.selectedLevel + 1
+
+    const completedLevels = JSON.parse(localStorage.getItem("pongTournamentCompletedLevels") || "[]")
+    if (!completedLevels.includes(settings.selectedLevel)) {
+      completedLevels.push(settings.selectedLevel)
+      localStorage.setItem("pongTournamentCompletedLevels", JSON.stringify(completedLevels))
+    }
+
+    // Stop any running animations
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
+    }
+
+    onLevelComplete?.(settings.selectedLevel)
+
+    // Small delay to ensure parent component updates settings
+    setTimeout(() => {
+      // Reset game state for next level
+      setShowGameResult(false)
+      setGameOver(false)
+      setWinner(null)
+      setScore({ player: 0, opponent: 0 })
+      setCountdown(3)
+      setGameStarted(false)
+      setIsPaused(false)
+      setShouldCompleteLevel(false)
+
+      // Reset ball and paddle positions
+      resetBall()
+      playerPaddleRef.current.y = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2
+      opponentPaddleRef.current.y = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2
+
+      // Set timer for new level
+      const timerDuration = getTimerDuration()
+      setTimeLeft(timerDuration)
+    }, 50)
+  }
 
   return (
     <div className="text-center space-y-4">
@@ -460,9 +501,9 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
           {settings.playerName}: {score.player}
         </div>
         <div className="text-center">
-          {settings.gameMode === "time" && timeLeft !== null ? (
+          {settings.gameMode === "tournament" ? (
             <div>
-              <div>TIME: {timeLeft}s</div>
+              <div>TOURNAMENT</div>
               <div className="text-sm">LEVEL: {settings.selectedLevel}</div>
             </div>
           ) : settings.gameMode === "survivor" ? (
@@ -530,15 +571,60 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
               <div className="text-xl">
                 FINAL SCORE: {score.player} - {score.opponent}
               </div>
-              {settings.gameMode === "time" && winner === "player" && (
-                <div className="text-sm text-green-300">NEXT LEVEL STARTING IN 3 SECONDS...</div>
+
+              {settings.gameMode === "tournament" && winner === "player" && (
+                <div className="space-y-3 mt-6">
+                  <button
+                    onClick={handleReturnToLevelSelection}
+                    className="block w-full py-2 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors"
+                  >
+                    RETURN TO LEVEL SELECTION
+                  </button>
+                  <button
+                    onClick={handleReplayLevel}
+                    className="block w-full py-2 px-6 border-2 border-blue-400 bg-black hover:bg-blue-400 hover:text-black transition-colors"
+                  >
+                    REPLAY LEVEL {settings.selectedLevel}
+                  </button>
+                  {settings.selectedLevel < 50 && winner === "player" && (
+                    <button
+                      onClick={handleStartNextLevel}
+                      className="block w-full py-2 px-6 border-2 border-yellow-400 bg-black hover:bg-yellow-400 hover:text-black transition-colors"
+                    >
+                      START LEVEL {settings.selectedLevel + 1}
+                    </button>
+                  )}
+                </div>
               )}
-              <button
-                onClick={() => onStateChange("menu")}
-                className="py-2 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors"
-              >
-                RETURN TO MENU
-              </button>
+
+              {(settings.gameMode !== "tournament" || winner === "opponent") && (
+                <div className="space-y-3 mt-6">
+                  {settings.gameMode === "tournament" && (
+                    <>
+                      <button
+                        onClick={handleReturnToLevelSelection}
+                        className="block w-full py-2 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors"
+                      >
+                        RETURN TO LEVEL SELECTION
+                      </button>
+                      <button
+                        onClick={handleReplayLevel}
+                        className="block w-full py-2 px-6 border-2 border-blue-400 bg-black hover:bg-blue-400 hover:text-black transition-colors"
+                      >
+                        REPLAY LEVEL {settings.selectedLevel}
+                      </button>
+                    </>
+                  )}
+                  {settings.gameMode !== "tournament" && (
+                    <button
+                      onClick={() => onStateChange("menu")}
+                      className="block w-full py-2 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors"
+                    >
+                      RETURN TO MENU
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -547,8 +633,8 @@ export default function PongGame({ onStateChange, settings, onLevelComplete }: P
       <div className="text-sm space-y-1 border border-green-400 p-2">
         <p>W/S: MOVE LEFT PADDLE | {gameStarted ? "SPACE: PAUSE |" : ""} ESC: MENU</p>
         {settings.gameMode === "multiplayer" && <p>UP/DOWN ARROWS: MOVE RIGHT PADDLE</p>}
-        {settings.gameMode === "time" ? (
-          <p>SCORE AS MANY POINTS AS POSSIBLE IN {getTimerDuration()}S!</p>
+        {settings.gameMode === "tournament" ? (
+          <p>FIRST TO {settings.pointsToWin} POINTS WINS THE LEVEL!</p>
         ) : settings.gameMode === "survivor" ? (
           <p>SURVIVE AS LONG AS POSSIBLE! AI GETS HARDER EVERY 5 POINTS!</p>
         ) : (

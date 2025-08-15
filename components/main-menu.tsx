@@ -17,10 +17,10 @@ export default function MainMenu({ onStateChange, settings }: MainMenuProps) {
 
         <div className="space-y-4">
           <button
-            onClick={() => onStateChange("timestart")}
+            onClick={() => onStateChange("tournament")}
             className="block w-full py-3 px-6 border-2 border-green-400 bg-black hover:bg-green-400 hover:text-black transition-colors text-xl font-bold tracking-wide"
           >
-            TIME MODE
+            TOURNAMENT
           </button>
 
           <button
